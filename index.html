@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Temporal Progress Explorer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;600;800&family=JetBrains+Mono:wght@300;500&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #020617; 
+            color: #f8fafc;
+            min-height: 100vh;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            overflow-x: hidden;
+            background-image: radial-gradient(circle at 50% -20%, #1e293b 0%, #020617 80%);
+        }
+
+        .mono { font-family: 'JetBrains Mono', monospace; }
+
+        /* Hourglass Styles */
+        .hourglass-wrapper {
+            position: relative;
+            width: 150px;
+            height: 240px;
+            filter: drop-shadow(0 0 40px rgba(251, 191, 36, 0.1));
+        }
+        
+        .glass-body {
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.01) 100%);
+            backdrop-filter: blur(12px);
+            clip-path: polygon(0% 0%, 100% 0%, 100% 8%, 52% 50%, 100% 92%, 100% 100%, 0% 100%, 0% 92%, 48% 50%, 0% 8%);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            z-index: 10;
+        }
+
+        .pillar {
+            position: absolute;
+            width: 3px;
+            height: 100%;
+            background: linear-gradient(to bottom, #0f172a, #334155, #0f172a);
+            border-radius: 4px;
+            z-index: 20;
+        }
+
+        .sand-container {
+            position: absolute;
+            inset: 0;
+            clip-path: polygon(2% 2%, 98% 2%, 98% 8%, 52% 50%, 98% 92%, 98% 98%, 2% 98%, 2% 92%, 48% 50%, 2% 8%);
+            z-index: 5;
+        }
+
+        .sand-top {
+            position: absolute;
+            bottom: 50%;
+            left: 0;
+            width: 100%;
+            background: linear-gradient(to bottom, #fbbf24, #d97706);
+            transform-origin: bottom;
+        }
+
+        .sand-bottom {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            background: linear-gradient(to top, #fbbf24, #92400e);
+            transform-origin: bottom;
+        }
+
+        .stream {
+            position: absolute;
+            top: 50%;
+            left: calc(50% - 1px);
+            width: 2px;
+            height: 50%;
+            background: linear-gradient(to bottom, #fbbf24, transparent);
+            z-index: 6;
+            filter: drop-shadow(0 0 5px rgba(251, 191, 36, 0.8));
+        }
+        
+        .flowing { animation: flow 1s infinite linear; }
+        @keyframes flow {
+            from { transform: translateY(-100%); opacity: 0; }
+            50% { opacity: 1; }
+            to { transform: translateY(100%); opacity: 0; }
+        }
+
+        .day-cell {
+            aspect-ratio: 1;
+            border-radius: 2px;
+            background: #0f172a;
+            border: 1px solid rgba(255,255,255,0.03);
+            transition: all 0.2s ease;
+        }
+        .day-cell.filled { background: #fbbf24; opacity: 0.9; }
+        .day-cell.current {
+            background: #ffffff;
+            box-shadow: 0 0 12px #fbbf24;
+            transform: scale(1.1);
+            z-index: 10;
+        }
+
+        .view-btn.active {
+            background: #ffffff;
+            color: #020617;
+            transform: scale(1.05);
+        }
+
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 18px;
+            width: 18px;
+            border-radius: 4px;
+            background: #fbbf24;
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(251, 191, 36, 0.4);
+        }
+
+        .bento-card {
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 1.25rem;
+        }
+
+        .label-tiny {
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: #64748b;
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <!-- Header -->
+    <header class="w-full max-w-4xl flex flex-col items-center gap-6 mb-8 mt-4">
+        <div class="text-center">
+            <h1 id="year-display" class="text-7xl font-black tracking-tighter text-white">2026</h1>
+            <p id="date-display" class="text-[10px] uppercase font-bold tracking-[0.5em] text-amber-500 mt-2">January 08</p>
+        </div>
+
+        <div class="flex p-1 bg-white/5 rounded-2xl border border-white/10 backdrop-blur-xl">
+            <button onclick="switchView('vintage')" id="btn-vintage" class="view-btn px-6 py-2 text-[10px] font-bold rounded-xl transition-all active">VINTAGE</button>
+            <button onclick="switchView('matrix')" id="btn-matrix" class="view-btn px-6 py-2 text-[10px] font-bold rounded-xl transition-all text-slate-400">HEATMAP</button>
+            <button onclick="switchView('data')" id="btn-data" class="view-btn px-6 py-2 text-[10px] font-bold rounded-xl transition-all text-slate-400">STATS</button>
+        </div>
+    </header>
+
+    <!-- Main Visualizers -->
+    <main class="flex-1 w-full max-w-5xl flex items-center justify-center min-h-[400px]">
+        
+        <div id="view-vintage" class="flex flex-col items-center animate-in fade-in duration-500">
+            <div class="hourglass-wrapper">
+                <div class="pillar left-[-10px]"></div>
+                <div class="pillar right-[-10px]"></div>
+                <div class="glass-body"></div>
+                <div class="sand-container">
+                    <div id="sand-top" class="sand-top"></div>
+                    <div id="sand-stream" class="stream flowing"></div>
+                    <div id="sand-bottom" class="sand-bottom"></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="view-matrix" class="hidden w-full max-w-2xl animate-in zoom-in-95 duration-500">
+            <div class="bento-card p-6">
+                <div class="flex justify-between items-center mb-6 px-1">
+                    <span class="label-tiny">Jan</span>
+                    <span class="text-[10px] font-bold text-amber-500/50 tracking-widest uppercase">Progress Grid</span>
+                    <span class="label-tiny">Dec</span>
+                </div>
+                <div class="grid grid-cols-12 sm:grid-cols-18 md:grid-cols-24 gap-1.5" id="matrix-grid"></div>
+            </div>
+        </div>
+
+        <!-- RE-DESIGNED STATS VIEW -->
+        <div id="view-data" class="hidden w-full grid grid-cols-1 lg:grid-cols-3 gap-4 animate-in slide-in-from-bottom-4 duration-500">
+            
+            <!-- Column 1: Core Lifecycle -->
+            <div class="bento-card p-5 flex flex-col gap-6">
+                <div>
+                    <p class="label-tiny mb-4">Quarterly Phasing</p>
+                    <div id="q-stats" class="space-y-4"></div>
+                </div>
+                <div class="pt-6 border-t border-white/5">
+                    <p class="label-tiny mb-2">Month Saturation</p>
+                    <div class="flex items-end gap-2">
+                        <p id="month-percent" class="text-3xl font-bold mono text-white">0%</p>
+                        <p class="label-tiny pb-1 text-slate-500">Current</p>
+                    </div>
+                    <div class="h-1 bg-white/5 rounded-full mt-2 overflow-hidden">
+                        <div id="month-bar" class="h-full bg-white transition-all duration-700"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Column 2: Temporal Entropy (Real-time Focus) -->
+            <div class="bento-card p-5 flex flex-col">
+                <p class="label-tiny mb-6">Temporal Entropy</p>
+                <div class="flex-1 flex flex-col justify-center gap-6">
+                    <div>
+                        <p class="label-tiny text-slate-500">Seconds Remaining</p>
+                        <p id="secs-left" class="text-4xl font-black text-white mono tracking-tighter">0</p>
+                    </div>
+                    <div>
+                        <p class="label-tiny text-slate-500">Hours Exhausted</p>
+                        <p id="hours-passed" class="text-4xl font-black text-amber-500 mono tracking-tighter">0</p>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4 pt-4">
+                        <div>
+                            <p class="label-tiny text-slate-600">Weekends Left</p>
+                            <p id="weekends-remaining" class="text-xl font-bold text-white mono">0</p>
+                        </div>
+                        <div>
+                            <p class="label-tiny text-slate-600">Work Days Left</p>
+                            <p id="workdays-left" class="text-xl font-bold text-white mono">0</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Column 3: Secondary Metrics -->
+            <div class="grid grid-cols-1 gap-4">
+                <div class="bento-card p-5">
+                    <p class="label-tiny text-slate-500">Weeks Remaining</p>
+                    <div class="flex justify-between items-baseline mt-2">
+                        <p id="weeks-remaining" class="text-5xl font-bold text-white mono">0</p>
+                        <p class="label-tiny text-amber-500/50"><span id="weeks-passed">0</span> Passed</p>
+                    </div>
+                </div>
+                <div class="bento-card p-5">
+                    <p class="label-tiny text-slate-500">Current Status</p>
+                    <div class="flex justify-between items-center mt-2">
+                        <p id="current-quarter" class="text-4xl font-bold text-white mono">Q1</p>
+                        <div class="text-right">
+                            <p id="day-percent" class="text-xs font-bold text-amber-500 mono">0%</p>
+                            <p class="label-tiny text-slate-600">Day Cycle</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="bento-card p-5 bg-amber-500/5 border-amber-500/10">
+                    <p class="label-tiny text-amber-500/60">Annual Total</p>
+                    <p id="days-total-left" class="text-3xl font-bold text-amber-500 mono mt-1">0</p>
+                    <p class="label-tiny text-slate-600">Days to System Reset</p>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Global Progress Stats -->
+    <footer class="w-full max-w-xl mt-8 space-y-8 pb-12">
+        <div class="text-center group">
+            <p id="percent-val" class="text-5xl md:text-6xl font-black tabular-nums text-white mono transition-all duration-500 group-hover:text-amber-500">00.0000%</p>
+            <p class="text-[9px] uppercase tracking-[0.6em] text-white/20 font-bold mt-4">Annual Cycle Completion</p>
+        </div>
+
+        <div class="bento-card p-6">
+            <div class="flex items-center gap-4 mb-6">
+                <button id="realtime-toggle" onclick="toggleRealtime()" class="w-10 h-10 flex items-center justify-center rounded-xl bg-amber-500 text-black shadow-lg shadow-amber-500/20 active:scale-90 transition-transform flex-shrink-0">
+                    <svg id="pause-icon" class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+                    <svg id="play-icon" class="hidden w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                </button>
+                <input type="range" id="time-slider" min="0" max="100000" value="0" class="flex-1 h-1 bg-white/5 rounded-lg appearance-none cursor-pointer">
+            </div>
+            
+            <div class="flex justify-between items-center text-[10px] font-bold mono tracking-tighter text-white/40 px-1">
+                <span id="day-count">DAY 000 / 365</span>
+                <span id="days-left" class="text-amber-500/80 uppercase">000 Remaining</span>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        let isRealtime = true;
+        let currentView = 'vintage';
+
+        function isLeapYear(year) {
+            return (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0);
+        }
+
+        function initMatrix() {
+            const grid = document.getElementById('matrix-grid');
+            grid.innerHTML = '';
+            const year = new Date().getFullYear();
+            const totalDays = isLeapYear(year) ? 366 : 365;
+            for (let i = 1; i <= totalDays; i++) {
+                const day = document.createElement('div');
+                day.className = 'day-cell';
+                day.id = `day-${i}`;
+                grid.appendChild(day);
+            }
+        }
+
+        function switchView(view) {
+            currentView = view;
+            document.getElementById('view-vintage').classList.toggle('hidden', view !== 'vintage');
+            document.getElementById('view-matrix').classList.toggle('hidden', view !== 'matrix');
+            document.getElementById('view-data').classList.toggle('hidden', view !== 'data');
+            
+            ['vintage', 'matrix', 'data'].forEach(v => {
+                const btn = document.getElementById(`btn-${v}`);
+                btn.classList.toggle('active', view === v);
+                btn.classList.toggle('text-slate-400', view !== v);
+            });
+            updateUI();
+        }
+
+        function toggleRealtime() {
+            isRealtime = !isRealtime;
+            const btn = document.getElementById('realtime-toggle');
+            const pauseIcon = document.getElementById('pause-icon');
+            const playIcon = document.getElementById('play-icon');
+            if (isRealtime) {
+                btn.classList.replace('bg-slate-800', 'bg-amber-500');
+                btn.classList.replace('text-white', 'text-black');
+                pauseIcon.classList.remove('hidden');
+                playIcon.classList.add('hidden');
+                document.getElementById('sand-stream').classList.add('flowing');
+            } else {
+                btn.classList.replace('bg-amber-500', 'bg-slate-800');
+                btn.classList.replace('text-black', 'text-white');
+                pauseIcon.classList.add('hidden');
+                playIcon.classList.remove('hidden');
+                document.getElementById('sand-stream').classList.remove('flowing');
+            }
+        }
+
+        function updateUI() {
+            const now = new Date();
+            const year = now.getFullYear();
+            const start = new Date(year, 0, 1);
+            const end = new Date(year + 1, 0, 1);
+            const totalMs = end - start;
+            
+            let progress;
+            let displayDate;
+
+            if (isRealtime) {
+                progress = (now - start) / totalMs;
+                displayDate = now;
+                document.getElementById('time-slider').value = progress * 100000;
+            } else {
+                progress = document.getElementById('time-slider').value / 100000;
+                displayDate = new Date(start.getTime() + (totalMs * progress));
+            }
+
+            document.getElementById('percent-val').textContent = (progress * 100).toFixed(4) + '%';
+            document.getElementById('date-display').textContent = displayDate.toLocaleDateString('en-US', { month: 'long', day: '2-digit' });
+            
+            const totalDays = isLeapYear(year) ? 366 : 365;
+            const dayOfYear = Math.floor(progress * totalDays) + 1;
+            document.getElementById('day-count').textContent = `DAY ${dayOfYear.toString().padStart(3, '0')} / ${totalDays}`;
+            document.getElementById('days-left').textContent = `${Math.max(0, totalDays - dayOfYear)} Remaining`;
+
+            document.getElementById('sand-top').style.height = (50 * Math.max(0, 1 - progress)) + '%';
+            document.getElementById('sand-bottom').style.height = (50 * progress) + '%';
+
+            if (currentView === 'matrix') {
+                for (let i = 1; i <= totalDays; i++) {
+                    const cell = document.getElementById(`day-${i}`);
+                    if (cell) {
+                        cell.className = 'day-cell';
+                        if (i < dayOfYear) cell.classList.add('filled');
+                        if (i === dayOfYear) cell.classList.add('current');
+                    }
+                }
+            }
+
+            if (currentView === 'data') {
+                updateStats(progress, dayOfYear, totalDays, displayDate, year, totalMs);
+            }
+        }
+
+        function updateStats(progress, dayOfYear, totalDays, displayDate, year, totalMs) {
+            // Quarters
+            const qContainer = document.getElementById('q-stats');
+            qContainer.innerHTML = '';
+            for(let i=1; i<=4; i++) {
+                const qProgress = Math.min(100, Math.max(0, (progress * 100 - (i-1)*25) * 4));
+                qContainer.innerHTML += `
+                    <div class="space-y-1.5">
+                        <div class="flex justify-between items-center">
+                            <span class="text-[9px] font-bold tracking-widest ${qProgress >= 100 ? 'text-amber-500' : 'text-slate-600'}">PHASE 0${i}</span>
+                            <span class="text-[10px] mono text-white/60">${qProgress.toFixed(1)}%</span>
+                        </div>
+                        <div class="h-0.5 bg-white/5 rounded-full overflow-hidden">
+                            <div class="h-full bg-amber-500 shadow-[0_0_8px_rgba(251,191,36,0.3)]" style="width: ${qProgress}%"></div>
+                        </div>
+                    </div>`;
+            }
+
+            // Month Progress
+            const monthStart = new Date(displayDate.getFullYear(), displayDate.getMonth(), 1);
+            const nextMonth = new Date(displayDate.getFullYear(), displayDate.getMonth() + 1, 1);
+            const mProgress = (displayDate - monthStart) / (nextMonth - monthStart);
+            document.getElementById('month-percent').textContent = Math.floor(mProgress * 100) + '%';
+            document.getElementById('month-bar').style.width = (mProgress * 100) + '%';
+
+            // Entropy Metrics
+            const msRemaining = totalMs * (1 - progress);
+            document.getElementById('secs-left').textContent = Math.floor(msRemaining / 1000).toLocaleString();
+            document.getElementById('hours-passed').textContent = Math.floor(progress * totalMs / 3600000).toLocaleString();
+            
+            document.getElementById('weeks-passed').textContent = Math.floor(dayOfYear / 7);
+            document.getElementById('weeks-remaining').textContent = Math.floor((totalDays - dayOfYear) / 7);
+            document.getElementById('current-quarter').textContent = 'Q' + (Math.floor(progress * 4) + 1);
+            document.getElementById('days-total-left').textContent = (totalDays - dayOfYear);
+
+            // Day Progress (%)
+            const dayProgress = (displayDate.getHours() * 3600 + displayDate.getMinutes() * 60 + displayDate.getSeconds()) / 86400;
+            document.getElementById('day-percent').textContent = (dayProgress * 100).toFixed(1) + '%';
+
+            // Weekends & Workdays
+            let weekends = 0;
+            let workdays = 0;
+            let tempDate = new Date(displayDate);
+            while(tempDate.getFullYear() === year) {
+                const day = tempDate.getDay();
+                if(day === 0 || day === 6) weekends++;
+                else workdays++;
+                tempDate.setDate(tempDate.getDate() + 1);
+            }
+            document.getElementById('weekends-remaining').textContent = weekends;
+            document.getElementById('workdays-left').textContent = workdays;
+        }
+
+        document.getElementById('time-slider').addEventListener('input', () => {
+            if (isRealtime) toggleRealtime();
+            updateUI();
+        });
+
+        initMatrix();
+        setInterval(updateUI, 100);
+        updateUI();
+    </script>
+</body>
+</html>
+
+
